@@ -8,7 +8,7 @@
 
 mkdir -p logs
 
-DEV=false
+DEV=true
 
 PID_FILE="$(pwd)/.python_pid"
 ACTIVE_WINDOW_FILE="$(pwd)/logs/window_%s.txt" # %s will be repaced with timestamp of 7am on that day

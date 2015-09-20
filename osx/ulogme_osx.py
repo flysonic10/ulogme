@@ -10,7 +10,14 @@ from PyObjCTools import AppHelper
 
 from rewind7am import rewindTime
 
-DEBUG_APP = False
+import requests
+import json
+
+USER_ID = "brainpal_user"
+# ENDPOINT = "https://demo5498847.mockable.io/session"
+ENDPOINT = "http://demo.apiserver.cloudbrain.rocks/api/v1.0/users/brainpal_user/tags"
+
+DEBUG_APP = True
 DEBUG_KEYSTROKE = False
 
 def current_time():
@@ -28,6 +35,9 @@ def remove_non_ascii(s):
     return None
   return ''.join(c if ord(c) < 128 else ' ' for c in s)
 
+def publish_event(event):
+  r = requests.post(ENDPOINT, json=event)
+  print(r.text)
 
 class AppDelegate(NSObject):
 
@@ -50,13 +60,12 @@ class AppDelegate(NSObject):
 
 
 class EventSniffer:
-  
   def __init__(self, options):
     self.options = options
     self.current_app = None
     self.last_app_logged = None
+    self.last_app_info = {}
     self.init_chrome_tab_script()
-    
   def init_chrome_tab_script(self):
     self.chrome_tab_script = NSAppleScript.alloc().initWithSource_(
       """
@@ -72,7 +81,6 @@ class EventSniffer:
         'timerCallback:',
         None,
         True)
-    
   def run(self):
     NSApplication.sharedApplication()
     self.delegate = AppDelegate.alloc().init()
@@ -109,6 +117,22 @@ class EventSniffer:
   def set_active_app(self, app_name):
     self.current_app = remove_non_ascii(app_name)
 
+  def clean_window_name(self):
+    url = self.last_app_info["metadata"]["window"]
+    if 'facebook.com' in url:
+      return 'Facebook'
+    if 'slack.com' in url:
+      return 'Slack'
+    if 'cnn.com' in url:
+      return 'CNN'
+    if 'techcrunch.com' in url:
+      return 'TechCrunch'
+    if 'twitter.com' in url:
+      return 'Twitter'
+    if 'reddit.com' in url:
+      return 'Reddit'
+    return None
+
   def event_handler(self, event):
     if event.type() == NSKeyDown:
       if DEBUG_KEYSTROKE:
@@ -132,7 +156,7 @@ class EventSniffer:
     if res[0] is None:
       return None
     return str(res[0].stringValue())
-  
+
   def get_current_window_name(self):
     options = kCGWindowListOptionOnScreenOnly
     window_list = CGWindowListCopyWindowInfo(options, kCGNullWindowID)
@@ -157,8 +181,34 @@ class EventSniffer:
       else:
         name_to_log = '%s :: %s' % (self.current_app, window_name)
       if name_to_log != self.last_app_logged:
+        timestamp = current_time()
+
+        if self.last_app_info != {}:
+            # Set the end timestamp
+            self.last_app_info['end'] = timestamp
+            # Clean tag name
+            if 'Google Chrome' in self.last_app_info["tag_name"]:
+              print self.last_app_info
+              self.last_app_info["tag_name"] = self.clean_window_name()
+              print 'ran clean window'
+              print self.last_app_info
+
+            # Publish last app that was open
+            publish_event(self.last_app_info)
+
+        # Replace last app with current app
+        self.last_app_info = {
+            "user_id": USER_ID,
+            "start": timestamp,
+            "tag_name": self.current_app,
+            "metadata": {
+                "window": window_name
+            }
+        }
+
+
         self.last_app_logged = name_to_log
-        s = '%d %s' % (current_time(), name_to_log)
+        s = '%d %s' % (timestamp, name_to_log)
         if DEBUG_APP:
           print s
         # substitute the rewound time to the window file pattern and write
@@ -203,4 +253,3 @@ if __name__ == '__main__':
   app = EventSniffer(options)
 
   app.run()
-
